@@ -1,4 +1,4 @@
-### Hi there 👋
+### Interested in Finance/Stock/Crypto Currency/Blockchain
 
 
 ### My Techstacks
