@@ -1,4 +1,5 @@
 ### Interested in Finance/Stock/Crypto Currency/Blockchain
+### 투자자산운용사(Certified Investment Manager)
 
 
 ### My Techstacks
