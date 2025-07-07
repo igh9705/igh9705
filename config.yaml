@@ -1,0 +1,25 @@
+runtime:
+  loop_ms: 100                # 전략 주기
+  cancel_tps: 5               # Upbit REST TPS 한도
+  log_level: INFO
+
+strategy:
+  bp_threshold: 0.5           # 50 bp
+  order_size_krw: 2000000     # 200만 KRW
+
+exchanges:
+  spot:
+    id: upbit
+    symbol: USDT/BTC
+  hedge_primary:
+    id: binanceusdm          # Binance USD‑M Perp (ccxt)
+    symbol: BTC/USDT
+    ws_stream: bookTicker    # depth@100ms 가능
+  hedge_backup:
+    id: bybit
+    symbol: BTC/USDT
+    ws_stream: orderbook.1
+fx:
+  source: upbit           # ← ccxt id
+  symbol: USDT/KRW        # ← 가격 역수 필요 없음
+  poll_sec: 10            # ← REST 호출 주기
