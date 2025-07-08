@@ -10,6 +10,7 @@ class Strategy:
         self.log = logging.getLogger("Strategy")
     async def run(self):
         band = self.cfg.band
+        loop_s = self.loop_ms / 1000  
         while True:
             start = time.perf_counter()           # ⏱️
 

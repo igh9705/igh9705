@@ -4,6 +4,8 @@ from core.feed      import UpbitFeed, BinanceFeed, BybitFeed
 from core.exchange  import ExchWrapper
 from core.strategy  import Strategy
 from core.oms       import OMS
+from core.monitor import Monitor
+from core.fx import FxPoller
 from dotenv         import dotenv_values
 from prometheus_client import start_http_server, Summary, Counter
 
@@ -46,8 +48,15 @@ async def main():
              strat.run(), oms.run()]
  
     # --- OMS (fx 주입)
-    oms   = OMS(upbit, hedge, cfg.strategy, ord_q, fx)
+    oms   = OMS(                       # orders_counter, fx 모두 전달
+    spot=upbit,
+    hedge=hedge,
+    cfg=cfg.strategy,
+    ord_q=ord_q,
+    orders_counter=ORDERS_C,
+    fx=fx)
 
+    monitor = Monitor(upbit, hedge, oms)
     # --- Task gather
     tasks = [fx.run(), *(f.run() for f in feeds), strat.run(), oms.run()]
 
