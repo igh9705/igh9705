@@ -3,6 +3,7 @@ from .utils import TokenBucket
 from .exchange import ExchWrapper
 from .models import StratCfg
 from .fx       import FxPoller
+import logging
 
 class OMS:  
     def __init__(self,
@@ -10,6 +11,7 @@ class OMS:
                   hedge: ExchWrapper,
                   cfg: StratCfg,
                   ord_q: asyncio.Queue,
+                  orders_counter,
                   fx:  FxPoller):          # 🔄 ② fx 인스턴스 인자 추가
          self.spot, self.hedge, self.cfg  = spot, hedge, cfg
          self.ord_q, self.fx             = ord_q, fx
@@ -42,11 +44,11 @@ class OMS:
         await self.limiter.acquire()
         spot_side = "buy" if side=="bid" else "sell"
         ord = await self.spot.limit(spot_side, qty, float(price))
+        self.orders_c.labels(side=side).inc()   # 🔢 카운터 +1
         self.open[side] = ord["id"]
 
         hedge_side = "sell" if side=="bid" else "buy"
         await self.hedge.market(hedge_side, qty)   # 즉시 헷지
-        self.orders_c.labels(side=side).inc()   # 🔢 카운터 +1
 
     async def _cancel(self, side):
         if not self.open[side]: return

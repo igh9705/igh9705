@@ -1,8 +1,9 @@
 import asyncio, decimal as D
 from .models import StratCfg
-
+import time
+import logging
 class Strategy:
-    def __init__(self, cfg: StratCfg, mkt_q: asyncio.Queue, ord_q: asyncio.Queue):
+    def __init__(self, cfg: StratCfg, mkt_q: asyncio.Queue, ord_q: asyncio.Queue,loop_metric):
         self.cfg, self.mkt_q, self.ord_q = cfg, mkt_q, ord_q
         self.snap = {}                  # 최신 시장 데이터 캐시
         self.loop_metric = loop_metric

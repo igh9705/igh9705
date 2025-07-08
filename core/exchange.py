@@ -1,6 +1,7 @@
 import ccxt.async_support as ccxt
 from pydantic import BaseModel
 from typing import Any
+import logging
 
 class ExchWrapper(BaseModel):
     id: str
@@ -9,9 +10,11 @@ class ExchWrapper(BaseModel):
 
     async def init(self, keys: dict):
         klass = getattr(ccxt, self.id)
+        api_key = keys.get(f"{self.id.upper()}_KEY")     # 예: UPBIT_KEY
+        sec_key = keys.get(f"{self.id.upper()}_SECRET")  # 예: UPBIT_SECRET
         self.ccxt_ex = klass({
-            "apiKey": keys[self.id]["key"],
-            "secret": keys[self.id]["secret"],
+            "api_key": api_key,
+            "secret": sec_key,
             "enableRateLimit": True,
         })
         if hasattr(self.ccxt_ex, "load_markets"):

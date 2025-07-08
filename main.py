@@ -7,6 +7,9 @@ from core.oms       import OMS
 from dotenv         import dotenv_values
 from prometheus_client import start_http_server, Summary, Counter
 
+# --- start Prometheus exporter (port 9100)
+start_http_server(9100)
+
 # ✨ NEW: 메트릭 정의
 LOOP_LAT  = Summary("strategy_loop_ms", "Strategy loop latency")
 ORDERS_C  = Counter("orders_total", "Spot limit orders", ['side'])
@@ -14,9 +17,6 @@ ORDERS_C  = Counter("orders_total", "Spot limit orders", ['side'])
 async def main():
     cfg = load_config()
     mode = cfg.runtime.run_mode.upper()
-
-    # --- start Prometheus exporter (port 9100)
-    start_http_server(9100)
 
     # --- 큐
     mkt_q, ord_q = asyncio.Queue(), asyncio.Queue()
@@ -35,7 +35,7 @@ async def main():
 
         # --- Modules
     strat = Strategy(cfg.strategy, mkt_q, ord_q, LOOP_LAT)   # ← ① 메트릭 주입
-    oms   = OMS(upbit, hedge, cfg.strategy, ord_q, ORDERS_C) # ← ② 메트릭 주입
+    oms   = OMS(upbit, hedge, cfg.strategy, ord_q, ORDERS_C, fx) # ← ② 메트릭 주입
     fx    = FxPoller(cfg.fx)
 
     # --- Heartbeat task
@@ -44,9 +44,6 @@ async def main():
     tasks = [fx.run(), monitor.run(),
              *(f.run() for f in feeds),
              strat.run(), oms.run()]
-
-    # --- FX Poller
-    fx  = FxPoller(cfg.fx)                 # cfg.fx 는 pydantic 객체
  
     # --- OMS (fx 주입)
     oms   = OMS(upbit, hedge, cfg.strategy, ord_q, fx)
