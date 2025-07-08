@@ -16,6 +16,7 @@ class ExchWrapper(BaseModel):
             "api_key": api_key,
             "secret": sec_key,
             "enableRateLimit": True,
+            "verbose": False
         })
         if hasattr(self.ccxt_ex, "load_markets"):
             await self.ccxt_ex.load_markets()

@@ -1,70 +1,70 @@
-import asyncio, json, websockets, decimal as D
-from abc import ABC, abstractmethod
+# core/feed.py
+import asyncio, json, logging, decimal as D
+import websockets
 
-class AbstractFeed(ABC):
-    def __init__(self, q: asyncio.Queue):      # market_q 주입
-        self.q = q
-    @abstractmethod
-    async def run(self): ...
 
+class AbstractFeed:
+    def __init__(self, q: asyncio.Queue):
+        self.q   = q
+        self.log = logging.getLogger(self.__class__.__name__)
+
+
+# ────────────────────────────── Upbit (현물)
 class UpbitFeed(AbstractFeed):
     URL = "wss://api.upbit.com/websocket/v1"
-    def __init__(self, q, symbol="USDT-BTC"):
-        super().__init__(q); self.sym = symbol
-    async def run(self):
-        log = logging.getLogger("UpbitFeed")
-        sub = [{"ticket":"t"},{"type":"orderbook","codes":[self.sym]}]
-        async with websockets.connect(self.URL, ping_interval=20) as ws:
-            log.info("WS connected")
-            try:
-                await ws.send(json.dumps(sub))
-                async for msg in ws:
-                    data = json.loads(msg)
-                    best = data["obu"][0]
-                    await self.q.put({"ex":"spot",
-                                    "bid": D.Decimal(best["bid_price"]),
-                                    "ask": D.Decimal(best["ask_price"])})
-            except Exception as e:
-                log.error("WS error: %s", e, exc_info=True)
-            finally:
-                log.warning("WS disconnected")
 
+    def __init__(self,
+                 q: asyncio.Queue,
+                 symbol: str = "USDT-BTC",          # “거래통화-기준통화”
+                 depth: int = 1):                   # 1 레벨 호가만
+        super().__init__(q)
+        self.symbol = symbol
+        self.depth  = depth
+        self.topic  = "orderbook"                  # 구독 타입
+
+    async def run(self):
+        while True:
+            try:
+                async with websockets.connect(self.URL, ping_interval=20) as ws:
+                    sub = [{"ticket":"feed"},
+                           {"type": self.topic, "codes":[self.symbol], "depth": self.depth}]
+                    await ws.send(json.dumps(sub))
+                    self.log.info("WS connected")
+
+                    async for raw in ws:
+                        j = json.loads(raw)
+                        if j.get('type') != 'orderbook':       # 필터
+                            continue
+                        best = j['obu'][0]                     # ask_price / bid_price
+                        await self.q.put({"ex":"spot",
+                                          "ask": D.Decimal(best['ask_price']),
+                                          "bid": D.Decimal(best['bid_price'])})
+            except Exception as e:
+                self.log.warning("WS error: %s – reconnect in 5 s", e)
+                await asyncio.sleep(5)
+
+
+# ────────────────────────────── Binance USDT‑Perp (선물)
 class BinanceFeed(AbstractFeed):
-    def __init__(self, q, stream="btcusdt@bookTicker"):
-        super().__init__(q); self.url=f"wss://stream.binance.com:9443/ws/{stream}"
-    async def run(self):
-        log = logging.getLogger("BinanceFeed")
-        async with websockets.connect(self.url) as ws:
-            log.info("WS connected")
-            try:
-                async for raw in ws:
-                    j = json.loads(raw)
-                    await self.q.put({"ex":"hedge",
-                                    "bid_f": D.Decimal(j["b"]),
-                                    "ask_f": D.Decimal(j["a"])})
-            except Exception as e:
-                log.error("WS error: %s", e, exc_info=True)
-            finally:
-                log.warning("WS disconnected")
+    URL_BASE = "wss://fstream.binance.com/ws"
 
-class BybitFeed(AbstractFeed):
-    URL = "wss://stream.bybit.com/v5/public/linear"
-    def __init__(self, q, topic="orderbook.1.BTCUSDT"):
-        super().__init__(q); self.topic = topic
+    def __init__(self,
+                 q: asyncio.Queue,
+                 stream: str = "btcusdt@bookTicker"):
+        super().__init__(q)
+        self.stream = stream
+        self.URL    = f"{self.URL_BASE}/{self.stream}"
+
     async def run(self):
-        log = logging.getLogger("BybitFeed")
-        async with websockets.connect(self.URL) as ws:
-            log.info("WS connected")
+        while True:
             try:
-                await ws.send(json.dumps({"op":"subscribe","args":[self.topic]}))
-                async for raw in ws:
-                    j=json.loads(raw)
-                    if j.get("topic")!=self.topic: continue
-                    best = j["data"]["a"][0], j["data"]["b"][0]
-                    await self.q.put({"ex":"hedge",
-                                    "ask_f": D.Decimal(best[0][0]),
-                                    "bid_f": D.Decimal(best[1][0])})
+                async with websockets.connect(self.URL, ping_interval=20) as ws:
+                    self.log.info("WS connected")
+                    async for raw in ws:
+                        j = json.loads(raw)
+                        await self.q.put({"ex":"hedge",
+                                          "ask_f": D.Decimal(j["a"]),
+                                          "bid_f": D.Decimal(j["b"])})
             except Exception as e:
-                log.error("WS error: %s", e, exc_info=True)
-            finally:
-                log.warning("WS disconnected")
+                self.log.warning("WS error: %s – reconnect in 5 s", e)
+                await asyncio.sleep(5)

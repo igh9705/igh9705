@@ -1,74 +1,90 @@
 import asyncio, signal, logging, time
-from core.models    import load_config
-from core.feed      import UpbitFeed, BinanceFeed, BybitFeed
-from core.exchange  import ExchWrapper
-from core.strategy  import Strategy
-from core.oms       import OMS
-from core.monitor import Monitor
-from core.fx import FxPoller
+
 from dotenv         import dotenv_values
 from prometheus_client import start_http_server, Summary, Counter
 
-# --- start Prometheus exporter (port 9100)
-start_http_server(9100)
+from core.models    import load_config
+from core.feed      import UpbitFeed, BinanceFeed
+from core.exchange  import ExchWrapper
+from core.strategy  import Strategy
+from core.oms       import OMS
+from core.fx        import FxPoller
+from core.monitor   import Monitor
 
-# ✨ NEW: 메트릭 정의
-LOOP_LAT  = Summary("strategy_loop_ms", "Strategy loop latency")
-ORDERS_C  = Counter("orders_total", "Spot limit orders", ['side'])
 
-async def main():
-    cfg = load_config()
-    mode = cfg.runtime.run_mode.upper()
+async def main() -> None:
+    # ─────────────────────────── 설정 로드
+    cfg = load_config()                    # 반드시 runtime.run_mode: LIVE 로 되어 있어야 함
 
-    # --- 큐
+    # ─────────────────────────── Prometheus
+    start_http_server(9100)
+    LOOP_LAT = Summary("strategy_loop_ms", "Strategy loop latency (ms)")
+    ORDERS_C = Counter("orders_total", "Spot limit‑주문 건수", ['side'])
+
+    # ─────────────────────────── 큐
     mkt_q, ord_q = asyncio.Queue(), asyncio.Queue()
 
-    # --- WebSocket Feeds
+    # ─────────────────────────── WebSocket 피드
     feeds = [
-        UpbitFeed(mkt_q, cfg.exchanges['spot'].symbol.replace('/','-')),
-        BinanceFeed(mkt_q, f"btcusdt@{cfg.exchanges['hedge_primary'].ws_stream}"),
-    ]
+    UpbitFeed(mkt_q, symbol="USDT-BTC"),          # 현물
+    BinanceFeed(mkt_q, stream="btcusdt@bookTicker")]  # 선물
 
-    # --- Exchanges
-    api_keys = dotenv_values(".env")            # .env에 exchange별 key/secret
+    # ─────────────────────────── REST 거래소 초기화
+    keys = dotenv_values(".env")  # .env 에 UPBIT_KEY=…, BINANCEUSDM_KEY=…  형식
     upbit  = ExchWrapper(**cfg.exchanges['spot'].dict())
     hedge  = ExchWrapper(**cfg.exchanges['hedge_primary'].dict())
-    await asyncio.gather(upbit.init(api_keys), hedge.init(api_keys))
+    await asyncio.gather(upbit.init(keys), hedge.init(keys))
 
-        # --- Modules
-    strat = Strategy(cfg.strategy, mkt_q, ord_q, LOOP_LAT)   # ← ① 메트릭 주입
-    oms   = OMS(upbit, hedge, cfg.strategy, ord_q, ORDERS_C, fx) # ← ② 메트릭 주입
-    fx    = FxPoller(cfg.fx)
+    # ─────────────────────────── FX Poller (USDT/KRW 환율)
+    fx = FxPoller(cfg.fx)
 
-    # --- Heartbeat task
+    # ─────────────────────────── 핵심 모듈
+    strat = Strategy(
+        cfg.strategy,
+        mkt_q, ord_q,
+        LOOP_LAT,
+        cfg.runtime.loop_ms
+    )
+    oms   = OMS(
+        spot=upbit,
+        hedge=hedge,
+        cfg=cfg.strategy,
+        ord_q=ord_q,
+        orders_counter=ORDERS_C,
+        fx=fx
+    )
     monitor = Monitor(upbit, hedge, oms)
 
-    tasks = [fx.run(), monitor.run(),
-             *(f.run() for f in feeds),
-             strat.run(), oms.run()]
- 
-    # --- OMS (fx 주입)
-    oms   = OMS(                       # orders_counter, fx 모두 전달
-    spot=upbit,
-    hedge=hedge,
-    cfg=cfg.strategy,
-    ord_q=ord_q,
-    orders_counter=ORDERS_C,
-    fx=fx)
+    # ─────────────────────────── Task 묶음
+    tasks = [
+        fx.run(),
+        monitor.run(),
+        *(f.run() for f in feeds),
+        strat.run(),
+        oms.run()
+    ]
 
-    monitor = Monitor(upbit, hedge, oms)
-    # --- Task gather
-    tasks = [fx.run(), *(f.run() for f in feeds), strat.run(), oms.run()]
-
+    # ─────────────────────────── Graceful Shutdown
     loop_task = asyncio.gather(*tasks)
-    # Graceful shutdown
     for sig in (signal.SIGINT, signal.SIGTERM):
-        asyncio.get_event_loop().add_signal_handler(sig, loop_task.cancel)
-    await loop_task
+        asyncio.get_running_loop().add_signal_handler(sig, loop_task.cancel)
 
+    try:
+        await loop_task
+    finally:
+        if hasattr(upbit, "ccxt_ex"):
+            await upbit.ccxt_ex.close()
+        if hasattr(hedge, "ccxt_ex"):
+            await hedge.ccxt_ex.close()
+
+
+
+# ─────────────────────────── 실행 진입점
 if __name__ == "__main__":
     logging.basicConfig(
-        level=logging.DEBUG,                      # INFO → DEBUG
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+        level=logging.DEBUG,
+        format="%(asc" \
+        "time)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("ccxt.base.exchange").setLevel(logging.INFO)
+
     asyncio.run(main())
