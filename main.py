@@ -5,9 +5,18 @@ from core.exchange  import ExchWrapper
 from core.strategy  import Strategy
 from core.oms       import OMS
 from dotenv         import dotenv_values
+from prometheus_client import start_http_server, Summary, Counter
+
+# ✨ NEW: 메트릭 정의
+LOOP_LAT  = Summary("strategy_loop_ms", "Strategy loop latency")
+ORDERS_C  = Counter("orders_total", "Spot limit orders", ['side'])
 
 async def main():
     cfg = load_config()
+    mode = cfg.runtime.run_mode.upper()
+
+    # --- start Prometheus exporter (port 9100)
+    start_http_server(9100)
 
     # --- 큐
     mkt_q, ord_q = asyncio.Queue(), asyncio.Queue()
@@ -24,9 +33,17 @@ async def main():
     hedge  = ExchWrapper(**cfg.exchanges['hedge_primary'].dict())
     await asyncio.gather(upbit.init(api_keys), hedge.init(api_keys))
 
-    # --- Modules
-    strat = Strategy(cfg.strategy, mkt_q, ord_q)
-    oms   = OMS(upbit, hedge, cfg.strategy, ord_q)
+        # --- Modules
+    strat = Strategy(cfg.strategy, mkt_q, ord_q, LOOP_LAT)   # ← ① 메트릭 주입
+    oms   = OMS(upbit, hedge, cfg.strategy, ord_q, ORDERS_C) # ← ② 메트릭 주입
+    fx    = FxPoller(cfg.fx)
+
+    # --- Heartbeat task
+    monitor = Monitor(upbit, hedge, oms)
+
+    tasks = [fx.run(), monitor.run(),
+             *(f.run() for f in feeds),
+             strat.run(), oms.run()]
 
     # --- FX Poller
     fx  = FxPoller(cfg.fx)                 # cfg.fx 는 pydantic 객체
@@ -44,5 +61,8 @@ async def main():
     await loop_task
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.DEBUG,                      # INFO → DEBUG
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
     asyncio.run(main())

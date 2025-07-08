@@ -15,6 +15,8 @@ class OMS:
          self.ord_q, self.fx             = ord_q, fx
          self.open  = {'bid':None,'ask':None}
          self.limiter = TokenBucket(rps=5)
+         self.orders_c = orders_counter
+         self.log = logging.getLogger("OMS")
 
     async def _size_btc(self, price_usdt:D.Decimal)->float:
          krw_per_usdt = self.fx.price      # 🔄 ③ 실시간 환율 사용
@@ -44,9 +46,20 @@ class OMS:
 
         hedge_side = "sell" if side=="bid" else "buy"
         await self.hedge.market(hedge_side, qty)   # 즉시 헷지
+        self.orders_c.labels(side=side).inc()   # 🔢 카운터 +1
 
     async def _cancel(self, side):
         if not self.open[side]: return
         await self.limiter.acquire()
         await self.spot.cancel(self.open[side])
         self.open[side] = None
+
+    # --- 긴급 청산 (모니터용)
+    async def emergency_flat(self):
+        self.log.warning("EMERGENCY FLAT start")
+        for s in ('bid','ask'):
+            if self.open_orders[s]:
+                await self._cancel_order(s)
+        # hedge 포지션 정리
+        await self.hedge.market("buy", 999)   # ← 실제 구현 시 포지션 사이즈 조회 후 반대 주문
+        self.log.warning("EMERGENCY FLAT done")

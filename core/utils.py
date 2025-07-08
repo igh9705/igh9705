@@ -1,4 +1,5 @@
 import asyncio, time
+import logging
 
 class TokenBucket:
     def __init__(self, rps:int):
@@ -14,3 +15,4 @@ class TokenBucket:
             if self.tokens < 1:
                 await asyncio.sleep((1 - self.tokens)/self.capacity)
             self.tokens -= 1
+        logging.getLogger("RateLimiter").debug("token used (remain=%.1f)", self.tokens)

@@ -16,6 +16,13 @@ class ExchWrapper(BaseModel):
         })
         if hasattr(self.ccxt_ex, "load_markets"):
             await self.ccxt_ex.load_markets()
+        log = logging.getLogger(f"ExchWrapper[{self.id}]")
+        try:
+            await self.ccxt_ex.fetch_ticker(self.symbol)   # ping
+            log.info("REST auth OK")
+        except Exception as e:
+            log.error("REST auth FAIL: %s", e, exc_info=True)
+            raise
 
     async def limit(self, side: str, amount: float, price: float):
         fn = self.ccxt_ex.create_limit_buy_order if side == "buy" \

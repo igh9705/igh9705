@@ -5,9 +5,13 @@ class Strategy:
     def __init__(self, cfg: StratCfg, mkt_q: asyncio.Queue, ord_q: asyncio.Queue):
         self.cfg, self.mkt_q, self.ord_q = cfg, mkt_q, ord_q
         self.snap = {}                  # 최신 시장 데이터 캐시
+        self.loop_metric = loop_metric
+        self.log = logging.getLogger("Strategy")
     async def run(self):
         band = self.cfg.band
         while True:
+            start = time.perf_counter()           # ⏱️
+
             # 1) 큐 비우기
             try:
                 while True:
@@ -31,3 +35,7 @@ class Strategy:
                                       "action":"update" if sell_sp>=band else "cancel",
                                       "price":self.snap['bid']})
             await asyncio.sleep(0)      # cooperative, 100 ms cadence는 main에서
+            self.log.debug("buy_sp=%+.4f%% sell_sp=%+.4f%%",
+                float(buy_sp*100), float(sell_sp*100))
+            self.loop_metric.observe( (time.perf_counter()-start)*1000 )
+            await asyncio.sleep(loop_s)
