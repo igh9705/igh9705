@@ -60,13 +60,17 @@ class OMS:
         except Exception as e:
             self.log.warning("레버리지 설정 실패: %s", e)
 
-    async def _size_btc(self, price_usdt:D.Decimal)->float:
-         krw_per_usdt = self.fx.price      # 🔄 ③ 실시간 환율 사용
-         if krw_per_usdt == 0:
-             return 0.0                   # 아직 환율 못받음 → 주문 보류
-         nominal_usdt = D.Decimal(self.cfg.order_size_krw) / krw_per_usdt
-         btc_amount   = (nominal_usdt / price_usdt).quantize(D.Decimal('0.00000001'))
-         return float(btc_amount)
+    async def _size_btc(self, price_usdt: D.Decimal) -> float:
+        krw_per_usdt = self.fx.price
+        if krw_per_usdt == 0 or price_usdt == 0:
+            return 0.0                         # 아직 데이터가 없다면 주문 보류
+
+        nominal_usdt = D.Decimal(self.cfg.order_size_krw) / krw_per_usdt
+        btc_amount   = (nominal_usdt / price_usdt).quantize(D.Decimal("0.00000001"))
+
+        if btc_amount == 0:
+            return 0.0                         # Upbit 최소 수량 미만일 때도 보류
+        return float(btc_amount)
     async def hedge_market(self, side: str, qty_btc: D.Decimal):
         """
         선물 시장가 주문 — side= 'buy' or 'sell'

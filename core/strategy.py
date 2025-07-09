@@ -30,7 +30,10 @@ class Strategy:
                     self.snap.update(ev)
             except asyncio.QueueEmpty:
                 pass
-
+            if 0 in (self.snap.get('ask', 0), self.snap.get('bid', 0),
+                    self.snap.get('ask_f', 0), self.snap.get('bid_f', 0)):
+                await asyncio.sleep(self.loop_s)
+                continue
             # 2) 데이터가 충분할 때만 스프레드 계산
             if {'bid','ask','bid_f','ask_f'} <= self.snap.keys():
                 f_mid = (self.snap['bid_f'] + self.snap['ask_f']) / 2
@@ -52,4 +55,4 @@ class Strategy:
 
             # 루프 종료까지의 시간 기록
             self.loop_metric.observe((time.perf_counter()-start)*1000)
-            await asyncio.sleep(self.loop_s)
+            
