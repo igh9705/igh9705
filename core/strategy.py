@@ -46,7 +46,6 @@ class Strategy:
                 await self.ord_q.put({"side":"ask",
                                     "action":"update" if sell_sp>=self.cfg.band else "cancel",
                                     "price": self.snap['bid']})
-
                 # 디버그 로그
                 self.log.debug("buy_sp=%+.4f%% sell_sp=%+.4f%%",
                             float(buy_sp*100), float(sell_sp*100))

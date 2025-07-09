@@ -10,7 +10,7 @@ from core.strategy  import Strategy
 from core.oms       import OMS
 from core.fx        import FxPoller
 from core.monitor   import Monitor
-
+from core.order_poller import UpbitOrderPoller
 
 async def main() -> None:
     # ─────────────────────────── 설정 로드
@@ -22,7 +22,7 @@ async def main() -> None:
     ORDERS_C = Counter("orders_total", "Spot limit‑주문 건수", ['side'])
 
     # ─────────────────────────── 큐
-    mkt_q, ord_q = asyncio.Queue(), asyncio.Queue()
+    mkt_q, ord_q, fill_q = asyncio.Queue(), asyncio.Queue(), asyncio.Queue()
 
     # ─────────────────────────── WebSocket 피드
     feeds = [
@@ -50,15 +50,19 @@ async def main() -> None:
         hedge=hedge,
         cfg=cfg.strategy,
         ord_q=ord_q,
+        fill_q = fill_q,
         orders_counter=ORDERS_C,
         fx=fx
     )
+    poller = UpbitOrderPoller(upbit, oms.watch_set, fill_q, poll_ms=1000)
+
     monitor = Monitor(upbit, hedge, oms)
 
     # ─────────────────────────── Task 묶음
     tasks = [
         fx.run(),
         monitor.run(),
+        poller.run(),
         *(f.run() for f in feeds),
         strat.run(),
         oms.run()

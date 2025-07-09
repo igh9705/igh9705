@@ -12,7 +12,8 @@ class RuntimeCfg(BaseModel):
 class StratCfg(BaseModel):
     bp_threshold: float = Field(..., gt=0)     # %
     order_size_krw: int  = Field(..., gt=0)
-
+    hedge_leverage: int  = Field(1, gt=0)   # 기본 1 배
+    
     @property
     def band(self) -> D.Decimal:
         return D.Decimal(self.bp_threshold) / D.Decimal(100)

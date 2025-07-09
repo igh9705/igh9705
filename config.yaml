@@ -6,7 +6,8 @@ runtime:
 
 strategy:
   bp_threshold: 0.5           # 50 bp
-  order_size_krw: 2000000     # 200만 KRW
+  order_size_krw: 100000     # 200만 KRW
+  hedge_leverage: 100
 
 exchanges:
   spot:
