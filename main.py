@@ -11,7 +11,13 @@ from core.oms       import OMS
 from core.fx        import FxPoller
 from core.monitor   import Monitor
 from core.order_poller import UpbitOrderPoller
+import logging
 
+# ─── quiet websockets DEBUG ───────────────────────
+logging.getLogger("websockets.client").setLevel(logging.INFO)
+# 필요하다면 서버 측도
+logging.getLogger("websockets.server").setLevel(logging.INFO)
+# ──────────────────────────────────────────────────
 async def main() -> None:
     # ─────────────────────────── 설정 로드
     cfg = load_config()                    # 반드시 runtime.run_mode: LIVE 로 되어 있어야 함
@@ -45,14 +51,14 @@ async def main() -> None:
         LOOP_LAT,
         cfg.runtime.loop_ms
     )
-    oms   = OMS(
-        spot=upbit,
-        hedge=hedge,
-        cfg=cfg.strategy,
-        ord_q=ord_q,
-        fill_q = fill_q,
-        orders_counter=ORDERS_C,
-        fx=fx
+    oms = OMS(
+        upbit,         # spot
+        hedge,         # hedge
+        cfg.strategy,  # cfg
+        ord_q,
+        fill_q,
+        ORDERS_C,      # prometheus counter 등
+        fx
     )
     poller = UpbitOrderPoller(upbit, oms.watch_set, fill_q, poll_ms=1000)
 

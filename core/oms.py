@@ -5,25 +5,30 @@ from .models import StratCfg
 from .fx       import FxPoller
 import logging
 from typing import Set
+from core.utils import TokenBucket
 
 class OMS:  
     def __init__(self,
-                   spot: ExchWrapper,
-                  hedge: ExchWrapper,
-                  cfg: StratCfg,
-                  ord_q: asyncio.Queue,
-                  fill_q: asyncio.Queue,
-                  orders_counter,
-                  fx:  FxPoller):          # 🔄 ② fx 인스턴스 인자 추가
-         self.spot = spot, self.hedge = hedge, self.cfg = cfg,
-         self.ord_q = ord_q, self.fx = fx,
-         self.open  = {'bid':None,'ask':None}
-         self.watch_set: Set[str] = set()      # ★ 체결 감시용
-         self.limiter = TokenBucket(rps=5)
-         self.orders_c = orders_counter
-         self.fill_q = fill_q
-         self.log = logging.getLogger("OMS")
-         self.leverage_set = False
+                 spot,          # ExchWrapper (Upbit)
+                 hedge,         # ExchWrapper (Binance)
+                 cfg,           # StratCfg
+                 ord_q,         # asyncio.Queue
+                 fill_q,        # asyncio.Queue
+                 orders_counter,
+                 fx):
+        self.spot   = spot
+        self.hedge  = hedge
+        self.cfg    = cfg
+        self.ord_q  = ord_q
+        self.fill_q = fill_q
+        self.fx     = fx
+
+        self.open       = {'bid': None, 'ask': None}
+        self.watch_set  = set()
+        self.orders_c   = orders_counter
+        self.log        = logging.getLogger("OMS")
+        self.limiter = TokenBucket(rps = 5)
+        self._leverage_set = False
     async def spot_limit(self, side: str, price: D.Decimal, qty_btc: float):
         """
         Upbit 지정가 주문을 넣고 order_id 를 watch_set 에 등록
@@ -60,7 +65,7 @@ class OMS:
          if krw_per_usdt == 0:
              return 0.0                   # 아직 환율 못받음 → 주문 보류
          nominal_usdt = D.Decimal(self.cfg.order_size_krw) / krw_per_usdt
-         btc_amount   = (nominal_usdt * price_usdt).quantize(D.Decimal('0.00000001'))
+         btc_amount   = (nominal_usdt / price_usdt).quantize(D.Decimal('0.00000001'))
          return float(btc_amount)
     async def hedge_market(self, side: str, qty_btc: D.Decimal):
         """

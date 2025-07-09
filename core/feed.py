@@ -26,19 +26,28 @@ class UpbitFeed(AbstractFeed):
         while True:
             try:
                 async with websockets.connect(self.URL, ping_interval=20) as ws:
-                    sub = [{"ticket":"feed"},
-                           {"type": self.topic, "codes":[self.symbol], "depth": self.depth}]
+                    sub = [
+                        {"ticket": "feed"},
+                        {"type": "orderbook", "codes": [self.symbol], "depth": 1}
+                    ]
                     await ws.send(json.dumps(sub))
                     self.log.info("WS connected")
 
                     async for raw in ws:
                         j = json.loads(raw)
-                        if j.get('type') != 'orderbook':       # 필터
+
+                        if j.get("type") != "orderbook":
                             continue
-                        best = j['obu'][0]                     # ask_price / bid_price
-                        await self.q.put({"ex":"spot",
-                                          "ask": D.Decimal(best['ask_price']),
-                                          "bid": D.Decimal(best['bid_price'])})
+
+                        units = j.get("orderbook_units")
+                        if not units:
+                            continue
+
+                        best = units[0]  # 1‑레벨
+                        ask = D.Decimal(best["ask_price"])
+                        bid = D.Decimal(best["bid_price"])
+
+                        await self.q.put({"ex": "spot", "ask": ask, "bid": bid})
             except Exception as e:
                 self.log.warning("WS error: %s – reconnect in 5 s", e)
                 await asyncio.sleep(5)
